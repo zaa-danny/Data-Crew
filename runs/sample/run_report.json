@@ -1,0 +1,20 @@
+{
+  "run_id": "run-20261110-064921-3738f5",
+  "status": "error",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "role": "orchestrator",
+      "tasks": 0,
+      "tool_calls": 0
+    }
+  ],
+  "tasks": [],
+  "artifacts": [],
+  "deploy": null,
+  "tests": null,
+  "steps": 1,
+  "tokens": 0,
+  "model": "deepseek-chat",
+  "plan_source": null
+}

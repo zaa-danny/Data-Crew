@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "workspace_root": ".",
+  "default": "deny",
+  "allow": {
+    "write_glob": [
+      "data/**", "site/**", "server/**", "tests/**", "deploy/**",
+      "pipeline/**", "collector/**", "agents/**", "README.md"
+    ],
+    "read_glob": ["**"],
+    "bash_prefix": ["python", "python3", "ls", "cat", "git status", "git diff"],
+    "network_hosts": ["127.0.0.1", "localhost"]
+  },
+  "deny": {
+    "bash_pattern": ["rm -rf /", "curl | sh", "chmod 777 /", ":(){"],
+    "read_glob": ["**/.env", "**/api-keys.txt", "**/*.pem"]
+  },
+  "escape": "deny"
+}

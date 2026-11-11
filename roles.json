@@ -1,0 +1,177 @@
+[
+  {
+    "name": "orchestrator",
+    "role": "orchestrator",
+    "systemPrompt": "You are the orchestrator. Read the spec, split work by spec.modules, and delegate with the task tool. You never write files yourself. Sub-agents cannot see this conversation, so every handoff must spell out field names, ordering rules, precision and threshold semantics.",
+    "allowedTools": [
+      "task",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 20,
+    "delegableTo": [
+      "collector",
+      "coder-data",
+      "coder-api",
+      "coder-ui",
+      "reviewer",
+      "integrator",
+      "tester",
+      "deployer"
+    ]
+  },
+  {
+    "name": "planner",
+    "role": "planner",
+    "systemPrompt": "You are the planner. Map each spec module to exactly one executor and output tasks[{id,module,agent}] as one JSON object.",
+    "allowedTools": [
+      "read_file"
+    ],
+    "readOnly": true,
+    "maxSteps": 4,
+    "delegableTo": []
+  },
+  {
+    "name": "collector",
+    "role": "collector",
+    "systemPrompt": "You are the collector. Fetch ONLY the pages listed in spec.source with http_fetch, parse the HTML table#readings with the standard library, and write every record (no filtering) as one JSON object {site,device,day,value} per line. Return a short conclusion, never raw HTML.",
+    "allowedTools": [
+      "http_fetch",
+      "parse_html",
+      "write_file",
+      "run_bash",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 14,
+    "delegableTo": [],
+    "modules": [
+      "collect"
+    ],
+    "dependsOn": []
+  },
+  {
+    "name": "coder-data",
+    "role": "coder",
+    "systemPrompt": "You are the data coder. Write only files you own (analyze/store modules, data/summary.json, data/app.db). Implement the methodology exactly: filter by min_value, sum raw values before rounding, sort keys as specified.",
+    "allowedTools": [
+      "write_file",
+      "run_bash",
+      "read_file",
+      "sqlite_exec"
+    ],
+    "readOnly": false,
+    "maxSteps": 14,
+    "delegableTo": [],
+    "modules": [
+      "analyze",
+      "store"
+    ],
+    "dependsOn": [
+      "collect"
+    ]
+  },
+  {
+    "name": "coder-api",
+    "role": "coder",
+    "systemPrompt": "You are the backend coder. Write only server/app.py and server/__init__.py: a standard-library HTTP server reading data/ and serving site/.",
+    "allowedTools": [
+      "write_file",
+      "run_bash",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 10,
+    "delegableTo": [],
+    "modules": [
+      "api"
+    ],
+    "dependsOn": [
+      "analyze"
+    ]
+  },
+  {
+    "name": "coder-ui",
+    "role": "coder",
+    "systemPrompt": "You are the frontend coder. Write only site/ files. app.js must fetch data.json and render #summary and #chart; never hardcode data.",
+    "allowedTools": [
+      "write_file",
+      "run_bash",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 10,
+    "delegableTo": [],
+    "modules": [
+      "ui"
+    ],
+    "dependsOn": [
+      "analyze"
+    ]
+  },
+  {
+    "name": "reviewer",
+    "role": "reviewer",
+    "systemPrompt": "Read-only reviewer: verify artifacts against the spec and methodology, output defects[{file, why}] as one JSON object. Approve only when no defect remains.",
+    "allowedTools": [
+      "read_file",
+      "glob"
+    ],
+    "readOnly": true,
+    "maxSteps": 10,
+    "delegableTo": []
+  },
+  {
+    "name": "integrator",
+    "role": "integrator",
+    "systemPrompt": "You are the integrator and the single write gateway to workspace/. Copy reviewed files from agent directories into workspace/ and record per-file provenance.",
+    "allowedTools": [
+      "merge_files",
+      "read_file",
+      "glob"
+    ],
+    "readOnly": false,
+    "maxSteps": 8,
+    "delegableTo": []
+  },
+  {
+    "name": "tester",
+    "role": "tester",
+    "systemPrompt": "You are the tester. Write tests/test_pipeline.py and tests/test_api.py (unittest, at least 5 cases: threshold filter, by_site order, top_devices truncation, SQLite round-trip, API data functions) and run them.",
+    "allowedTools": [
+      "write_file",
+      "run_bash",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 12,
+    "delegableTo": [],
+    "modules": [
+      "qa"
+    ],
+    "dependsOn": [
+      "analyze",
+      "api"
+    ]
+  },
+  {
+    "name": "deployer",
+    "role": "deployer",
+    "systemPrompt": "You are the deployer. Write deploy/README.md with the start command (python server/app.py --port N) and the health check (/api/health).",
+    "allowedTools": [
+      "write_file",
+      "run_bash",
+      "read_file"
+    ],
+    "readOnly": false,
+    "maxSteps": 8,
+    "delegableTo": [],
+    "modules": [
+      "deploy"
+    ],
+    "dependsOn": [
+      "api",
+      "qa"
+    ]
+  }
+]
