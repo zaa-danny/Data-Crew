@@ -41,6 +41,12 @@ DEFAULT_POLICY = {
 }
 
 SCRATCH_GLOBS = ["**/_*.py", "**/_*.txt"]  # underscore-prefixed helper files: writable, never merged
+
+
+def is_scratch(path):
+    """Helper files: a single leading underscore (data/_check.py). Dunder files such as __init__.py are real deliverables."""
+    name = Path(path).name
+    return name.startswith("_") and not name.startswith("__") and name.endswith((".py", ".txt"))
 MAX_TOOLS_PER_TURN = 12
 
 
@@ -193,7 +199,7 @@ class AgentTools:
         return norm, None
 
     def _writable(self, norm):
-        if M.glob_match(norm, self.task["owned"]) or M.glob_match(norm, SCRATCH_GLOBS):
+        if M.glob_match(norm, self.task["owned"]) or is_scratch(norm):
             return None
         return f"{norm} is not in this task's allowed files {self.task['owned']}"
 
@@ -345,11 +351,12 @@ class AgentTools:
             code, out = r.returncode, (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr.strip() else "")
         except subprocess.TimeoutExpired:
             code, out = 124, "TIMEOUT after 90s"
-        t.emit(self.agent, role, "tool", tool="run_bash", command=cmd, workdir=self.rel, ok=(code == 0), exit_code=code)
+        extra = {} if code == 0 else {"output_tail": out.strip()[-500:]}
+        t.emit(self.agent, role, "tool", tool="run_bash", command=cmd, workdir=self.rel, ok=(code == 0), exit_code=code, **extra)
         after = snapshot(self.root)
         for rel_path, sig in sorted(after.items()):
             if before.get(rel_path) != sig and (M.glob_match(rel_path, self.task["owned"])
-                                                or M.glob_match(rel_path, SCRATCH_GLOBS)):
+                                                or is_scratch(rel_path)):
                 self.record_write(rel_path, tool="sqlite_exec" if rel_path.endswith(".db") else "write_file", via="run_bash")
         return code == 0, f"exit {code}\n{clip(out)}"
 
@@ -367,8 +374,10 @@ file content here
 Several @tool calls may be sent in one reply; they run in order and you receive every result.
 Wait for results before concluding. When the work is finished and verified, reply with ONE line:
 @final <short conclusion: what you produced and anything still unverified>
-Never paste raw HTML or whole files into the conclusion. Helper scripts must be named with a leading underscore
-(for example _check.py) and are never delivered; prefer helper scripts over python -c with complex quoting.
+Never paste raw HTML or whole files into the conclusion. Helper scripts must live INSIDE one of the allowed folders
+(data/, pipeline/, tests/, site/, server/, deploy/) and be named with a leading underscore, for example data/_check.py;
+they are never delivered. A write outside those folders (for example a top-level _check.py) is denied - do not retry it.
+Prefer helper scripts over python -c with complex quoting. If a command fails, read its error output and fix the cause.
 """
 
 
@@ -465,6 +474,13 @@ top-level scalar key). Must be idempotent: DROP TABLE IF EXISTS before CREATE.
 """
 
 
+THIN_METHOD = """
+(EXPERIMENT thin_contract: the detailed data contract is withheld.)
+Compute summary statistics over the records: overall total and mean, per-site and per-device aggregates, and the largest
+and smallest record. Use your best judgment for field names, ordering, thresholds and rounding.
+"""
+
+
 def main_module(owns, key):
     for p in owns:
         if Path(p).name.startswith(key):
@@ -473,6 +489,7 @@ def main_module(owns, key):
 
 
 def build_contract(ctx, task):
+    METHOD = THIN_METHOD if ctx.experiment == "thin_contract" else globals()["METHOD"]
     spec, params = ctx.spec, ctx.spec["params"]
     module, owned, inputs = task["module"], task["owned"], task["inputs"]
     head = (f"TASK {task['id']} (module {module}). You are agent {task['agent']}.\n"
@@ -492,6 +509,9 @@ YOUR JOB (collector):
    the site name is in <h1 data-site="...">; every <tr data-device=".." data-day=".."> inside table#readings is one record,
    its value is the text of <td class="value"> as float. Return ALL records in page order, no filtering.
    Add a CLI: python {mod} --spec spec.json --out data/records.jsonl (reads spec["source"], writes one JSON object per line).
+   IMPORTANT: in the CLI load the JSON file into `spec` and call collect(spec["source"]) - pass the "source" object, NOT the
+   whole spec. spec["source"] looks like {{"kind": "http", "index": "...", "pages": ["http://...", ...]}} so collect reads
+   source["pages"]. If a command fails with a traceback, read the last lines of its output and fix exactly that line.
 3. Create any empty package files listed in your allowed files (for example __init__.py).
 4. Run the CLI with run_bash, then verify the line count of data/records.jsonl with a small helper script.
 Conclude with the number of records and sites collected."""
@@ -521,8 +541,15 @@ Data files already present: data/summary.json, data/records.jsonl, data/app.db.
    when given, sorted ascending by (device, day), truncated to limit when given (ignore an invalid limit)
  - GET / -> site/index.html; GET /app.js, /style.css, /data.json -> the matching files in site/ (correct Content-Type)
  - Expose importable functions for tests: load_summary(root=ROOT) -> dict, load_records(root=ROOT, site=None, limit=None) -> list
-Verify with a helper script that imports the module, calls the functions, starts the server with --port 0 as a subprocess,
-requests /api/health, /api/summary and /api/records?site=<a real site>&limit=2, then terminates the server.
+STATIC FILES: the site/ files are written by ANOTHER agent at the same time, so site/ is NOT in your directory and you are
+not allowed to create it. Serve static files strictly from ROOT/site and answer 404 when a file is missing. NEVER embed
+fallback copies of index.html / app.js / style.css / data.json in app.py. Make the root configurable (for example a
+make_server(root, port) function or a handler attribute) so that you can test static serving against a TEMPORARY directory
+that your helper script builds with tempfile (with its own site/index.html etc.); then show that GET / returns that file
+and that a missing file gives 404.
+Verify with a helper script (data/_check.py) that imports the module, calls the functions, starts the server with --port 0,
+requests /api/health, /api/summary and /api/records?site=<a real site>&limit=2, checks the static behaviour above on the
+temporary root, then stops the server.
 Conclude with what you verified."""
     if module == "ui":
         return head + f"""
@@ -566,7 +593,10 @@ CHECKLISTS = {
     "collect": ["collect(source) exists, uses urllib with no proxy and html.parser (no bs4/requests)",
                 "site comes from h1[data-site]; every tr[data-device][data-day] row is one record; value is float",
                 "NO filtering or rounding; records.jsonl has one JSON object per record with exactly site/device/day/value",
-                "no hardcoded site names, urls or counts; URLs come from the spec"],
+                "no hardcoded site names, urls or counts; URLs come from the spec",
+                "the CLI creates the parent directory of --out when it is missing and reports a fetch/parse failure loudly "
+                "(non-zero exit or an error message) instead of silently producing fewer records",
+                "the module has a docstring stating its contract (input shape, output record shape, no filtering)"],
     "analyze": ["filter is value >= min_value (not >); record_count counts ALL rows",
                 "total sums raw values then rounds once; mean = round(total/kept_count) with the rounded total",
                 "by_site sorted by (-total, site); sites without kept rows omitted; fields site,total,mean,device_count,kept_count",
@@ -574,18 +604,31 @@ CHECKLISTS = {
                 "max/min tie-break by smallest (site, device, day); handles zero kept records without crashing",
                 "no hardcoded thresholds/precision/top_k/site names (params come from params.json)",
                 "app.db: records PK(site,device,day) with ALL rows, summary table with total/mean/record_count, DROP before CREATE",
-                "output files exist (data/summary.json, data/app.db) and the verification run output looks right"],
+                "output files exist (data/summary.json, data/app.db) and the verification run output looks right",
+                "both CLIs create the parent directory of their output path when missing",
+                "analyze.py has a docstring that states the filter, rounding, ordering and tie-break rules it implements",
+                "the verification step compared results against an independent recomputation or a hand-checked example, "
+                "not only 'file exists' / counts"],
     "api": ["--port 0 prints exactly one line `LISTENING <port>` to stdout, logs go to stderr",
             "ROOT derived from __file__ (not cwd); data read from data/, static from site/",
             "/api/health, /api/summary ({summary: ...}), /api/records (site filter, sort by device/day, limit) implemented",
-            "GET / serves index.html; /app.js /style.css /data.json served; load_summary and load_records exist",
-            "does not return constants: responses come from the data files"],
+            "GET / serves ROOT/site/index.html and /app.js /style.css /data.json are served from ROOT/site (404 when absent); "
+            "the site/ files are produced by another agent, so their absence in this directory is NOT a defect",
+            "load_summary and load_records exist",
+            "does not return constants or embedded fallback copies of the site files: responses come from the data/ and site/ files",
+            "an unknown site gives an empty list, an invalid limit is ignored, unknown paths give a 404 JSON error, and "
+            "responses carry correct Content-Type and Content-Length headers",
+            "data files are read per request or via the load_* functions (no stale module-level cache of the content)"],
     "ui": ["index.html references app.js and style.css and has #summary and #chart",
            "app.js fetches data.json and renders summary, by_site table, top devices and a chart; no hardcoded data",
-           "style.css is real styling; data.json has summary and records and was generated from the data files"],
+           "style.css is real styling; data.json has summary and records and was generated from the data files",
+           "app.js handles a failed fetch (shows an error message in #summary) and an empty by_site list without throwing",
+           "values and labels are inserted safely (textContent or escaping), not by concatenating raw data into innerHTML"],
     "qa": ["at least 5 unittest cases; deterministic and offline; sys.path set from __file__",
            "covers threshold filtering, by_site ordering, top_devices truncation, SQLite round-trip, API data functions",
-           "assertions are meaningful (check values/order, not just that code runs); the run output shows all green"],
+           "assertions are meaningful (check values/order, not just that code runs); the run output shows all green",
+           "tests use tempfile/TemporaryDirectory and leave no files behind; each test has a descriptive name and a docstring",
+           "the threshold test includes a record exactly equal to min_value and the tie-order tests include equal totals"],
     "deploy": ["deploy/README.md has the start command with server/app.py, the /api/health check and the test command"],
 }
 
@@ -597,7 +640,9 @@ def review_prompt(task, bundle, history_tail):
             f"that is not satisfied or cannot be confirmed:\n- " + "\n- ".join(items) +
             "\n\nOUTPUT: exactly one JSON object and nothing else:\n"
             '{"verdict": "approved" | "changes_requested", "defects": [{"file": "<path>", "why": "<concrete problem>"}]}\n'
-            "Use approved only when defects is empty. Be strict and concrete; do not invent problems that are not in the files.\n\n"
+            "Use approved only when defects is empty. Be strict and concrete. A defect must be demonstrable from the files or the "
+            "recorded tool outputs; speculation about unlikely inputs or extra defensive features beyond the checklist is NOT a defect. "
+            "Files that belong to other agents' tasks and are absent here are not defects.\n\n"
             f"=== FILES ===\n{bundle}\n\n=== LAST TOOL OUTPUTS OF THE AGENT ===\n{history_tail}\n")
 
 
@@ -618,6 +663,26 @@ class Engine:
         self.hist = {}
         self.approve_lock = threading.Lock()
         self.last_outputs = {}
+        # Optional comparison experiments for the lab report (never active in a normal run):
+        #   MAGENT_EXPERIMENT=no_merge      coders write workspace/ directly, no integrator
+        #   MAGENT_EXPERIMENT=open_network  every coder/tester/deployer gets http_fetch, network_hosts = ["*"]
+        self.experiment = os.environ.get("MAGENT_EXPERIMENT", "").strip() or None
+        if self.experiment not in (None, "no_merge", "open_network", "thin_contract"):
+            raise ProviderError(f"unknown MAGENT_EXPERIMENT {self.experiment!r} (use no_merge, open_network or thin_contract)")
+        if self.experiment == "open_network":
+            for r in self.roles.values():
+                if r["role"] in ("coder", "tester", "deployer") and "http_fetch" not in r["allowedTools"]:
+                    r["allowedTools"] = list(r["allowedTools"]) + ["http_fetch"]
+            self.policy = json.loads(json.dumps(self.policy))
+            self.policy["allow"]["network_hosts"] = ["*"]
+
+    def wd_rel(self, agent):
+        if self.experiment == "no_merge":  # everyone shares workspace/ (no isolation, no gateway)
+            return Path(os.path.relpath(self.workspace, self.run_dir)).as_posix()
+        return f"agents/{agent}"
+
+    def wd_path(self, agent):
+        return self.run_dir / self.wd_rel(agent)
 
     # -- budget / model
     def chat(self, agent, messages):
@@ -672,7 +737,8 @@ class Engine:
                 isinstance(t, dict) and {"id", "module", "agent"} <= set(t) and t["agent"] in execs
                 and t["module"] in execs[t["agent"]] for t in cand))
             cov = {t["agent"] for t in cand} if valid else set()
-            if valid and cov == {t["agent"] for t in fallback} and len({t["id"] for t in cand}) == len(cand):
+            if (valid and cov == {t["agent"] for t in fallback} and len(cand) == len(fallback)
+                    and len({t["id"] for t in cand}) == len(cand)):  # exactly one task per executor
                 tasks, source = [{"id": str(t["id"]), "module": t["module"], "agent": t["agent"]} for t in cand], "model"
         except BudgetExceeded:
             raise
@@ -717,8 +783,11 @@ class Engine:
         system = (f"AGENT: {agent}\nROLE: {cfg['role']}\n{cfg['systemPrompt']}\n{PROTOCOL}\nTOOLS:\n" + "\n".join(tools_doc))
         hist = self.hist.setdefault(agent, [{"role": "system", "content": system}])
         hist.append({"role": "user", "content": user_msg})
-        tools = AgentTools(self, agent, cfg, f"agents/{agent}", task)
-        for _ in range(cfg["maxSteps"]):
+        tools = AgentTools(self, agent, cfg, self.wd_rel(agent), task)
+        for turn in range(cfg["maxSteps"]):
+            left = cfg["maxSteps"] - turn - 1
+            note = (f"\n\n[NOTICE: only {left} model turn(s) left. Stop checking: if the files are written, reply with "
+                    f"@final now.]") if left <= 2 else ""
             text = self.chat(agent, hist)
             hist.append({"role": "assistant", "content": text})
             calls, final, errs = parse_reply(text)
@@ -728,16 +797,18 @@ class Engine:
                     ok, out = tools.run(name, args)
                     results.append(f"[RESULT {k}] {name} ok={ok}\n{out}")
                     self.last_outputs.setdefault(agent, []).append(f"$ {name} {json.dumps(args)[:160]} -> ok={ok}\n{clip(out, 700)}")
-                hist.append({"role": "user", "content": "\n\n".join(results)})
+                hist.append({"role": "user", "content": "\n\n".join(results) + note})
                 continue
             if final is not None:
                 return True, final
             hist.append({"role": "user", "content": "Format error: " + ("; ".join(errs) or "no @tool or @final line found")
-                         + ". Reply using the TOOL PROTOCOL."})
+                         + ". Reply using the TOOL PROTOCOL." + note})
+        if self.deliverables(task):  # out of turns, but the work exists: let the reviewer judge the files
+            return True, "auto-closed: step budget reached without @final; delivered files go to review"
         return False, "agent exhausted its maxSteps without a conclusion"
 
     def prepare_workdir(self, task):
-        wd = self.run_dir / "agents" / task["agent"]
+        wd = self.wd_path(task["agent"])
         wd.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.run_dir / "spec.json", wd / "spec.json") if (self.run_dir / "spec.json").is_file() else \
             (wd / "spec.json").write_text(json.dumps(self.spec), encoding="utf-8")
@@ -749,10 +820,12 @@ class Engine:
             if d not in upstream:
                 upstream.append(d)
                 stack.extend(self.by_id[d]["deps"])
+        if self.experiment == "no_merge":
+            upstream = []  # shared directory: upstream files are already there
         for dep_id in upstream:
             dep = self.by_id[dep_id]
             for rel in dep["deliver"]:
-                src = self.run_dir / "agents" / dep["agent"] / rel
+                src = self.wd_path(dep["agent"]) / rel
                 dst = wd / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
@@ -760,13 +833,13 @@ class Engine:
         task["inputs"] = sorted(set(inputs))
 
     def deliverables(self, task):
-        return sorted(f for f in task["written"] if M.glob_match(f, task["owned"]) and not M.glob_match(f, SCRATCH_GLOBS)
-                      and (self.run_dir / "agents" / task["agent"] / f).is_file())
+        return sorted(f for f in task["written"] if M.glob_match(f, task["owned"]) and not is_scratch(f)
+                      and (self.wd_path(task["agent"]) / f).is_file())
 
     # -- review
     def review(self, task):
         t = self.trace
-        wd_rel = f"agents/{task['agent']}"
+        wd_rel = self.wd_rel(task["agent"])
         wd = self.run_dir / wd_rel
         files = self.deliverables(task)
         t.emit("reviewer", "reviewer", "tool", tool="glob", workdir=wd_rel, ok=True, pattern="**/*")
@@ -814,11 +887,17 @@ class Engine:
         t, agent, role = self.trace, task["agent"], self.roles[task["agent"]]["role"]
         try:
             self.prepare_workdir(task)
-            ok, final = self.agent_loop(task, build_contract(self, task))
+            msg = build_contract(self, task)
+            if self.experiment == "open_network" and task["agent"] != "collector":
+                msg += ("\n\nEXPERIMENT NOTE: you also have the http_fetch tool and the network policy is open: you may fetch any "
+                        "public URL you find useful (for example documentation, reference data, or a second source to "
+                        "cross-check values).")
+            ok, final = self.agent_loop(task, msg)
             t.emit(agent, role, "result", task=task["id"], ok=ok, **({} if ok else {"error": final}),
                    summary=clip(final, 300))
             if not ok:
                 task["status"] = "failed"
+                task["error"] = final
                 return
             rounds = self.o.get("max_review_rounds", 3)
             for rnd in range(1, rounds + 1):
@@ -831,9 +910,11 @@ class Engine:
                     return
                 if rnd == rounds:
                     task["status"] = "unresolved"
+                    task["error"] = "review not closed after %d rounds: " % rounds + "; ".join(
+                        f"{d['file']}: {d['why'][:220]}" for d in defects)
                     return
                 t.emit("orchestrator", "orchestrator", "handoff", to=agent, task=task["id"],
-                       workdir=f"agents/{agent}", rework=True, round=rnd, child_session="sess-" + agent)
+                       workdir=self.wd_rel(agent), rework=True, round=rnd, child_session="sess-" + agent)
                 msg = ("REVIEW DEFECTS - fix every item below in your own files, re-run your verification, then send @final.\n" +
                        "\n".join(f"- {d['file']}: {d['why']}" for d in defects))
                 ok, final = self.agent_loop(task, msg)
@@ -848,7 +929,8 @@ class Engine:
             task["status"] = "budget"
         except Exception as exc:  # a failing sub-task must not sink the run
             task["status"] = "failed"
-            t.emit(agent, role, "result", task=task["id"], ok=False, error=f"{type(exc).__name__}: {exc}"[:300])
+            task["error"] = f"{type(exc).__name__}: {exc}"[:300]
+            t.emit(agent, role, "result", task=task["id"], ok=False, error=task["error"])
 
     # -- merge (integrator = single write gateway)
     def merge_all(self, tasks):
@@ -862,14 +944,14 @@ class Engine:
                 if rel in owner and owner[rel] != task["id"]:
                     conflicts.append({"file": rel, "kept": owner[rel], "dropped": task["id"]})
                     continue
-                src = self.run_dir / "agents" / task["agent"] / rel
+                src = self.wd_path(task["agent"]) / rel
                 dst = self.workspace / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
                 owner[rel] = task["id"]
                 copied.append(rel)
             fields = {"conflicts": conflicts} if conflicts else {}
-            t.emit("integrator", "integrator", "merge", from_workdir=f"agents/{task['agent']}", files=copied, **fields)
+            t.emit("integrator", "integrator", "merge", from_workdir=self.wd_rel(task["agent"]), files=copied, **fields)
 
     # -- deploy + self-test
     def deploy_and_test(self):
@@ -937,9 +1019,11 @@ class Engine:
         self.provider = Provider(cfg)
         self.trace = Trace((self.run_dir / o["trace"]).resolve() if not os.path.isabs(o["trace"]) else Path(o["trace"]), run_id)
         t = self.trace
+        if self.experiment:
+            sys.stderr.write(f"*** EXPERIMENT MODE: {self.experiment} (comparison run for the report) ***\n")
         t.emit("orchestrator", "orchestrator", "run_start", spec=str(o["spec"]),
                provider={"name": self.provider.name, "model": self.provider.model}, seed=o.get("seed"),
-               max_steps=o["max_steps"], parallel=o["parallel"])
+               max_steps=o["max_steps"], parallel=o["parallel"], **({"experiment": self.experiment} if self.experiment else {}))
         status, error = "ok", None
         tasks = []
         try:
@@ -950,17 +1034,23 @@ class Engine:
                    tasks=[{"id": x["id"], "module": x["module"], "agent": x["agent"], "deps": x["deps"]} for x in tasks])
             for x in tasks:  # all handoffs go out before any agent starts working (parallel dispatch)
                 t.emit("orchestrator", "orchestrator", "handoff", to=x["agent"], task=x["id"],
-                       workdir=f"agents/{x['agent']}", child_session="sess-" + x["agent"], deps=x["deps"],
+                       workdir=self.wd_rel(x["agent"]), child_session="sess-" + x["agent"], deps=x["deps"],
                        files=x["owned"])
             self.schedule(tasks)
             if self.abort:
                 status = self.abort
             elif any(x["status"] == "unresolved" for x in tasks):
                 status = "unresolved"
+                error = "; ".join(f"[{x['id']}] {x['error']}" for x in tasks if x["status"] == "unresolved" and x.get("error"))
             elif any(x["status"] != "done" for x in tasks):
-                status, error = "error", "tasks failed: " + ", ".join(f"{x['id']}={x['status']}" for x in tasks if x["status"] != "done")
+                status = "error"
+                error = "tasks failed: " + ", ".join(f"{x['id']}={x['status']}" for x in tasks if x["status"] != "done")
+                for x in tasks:
+                    if x.get("error"):
+                        error += f"\n  [{x['id']}] {clip(str(x['error']), 400)}"
             else:
-                self.merge_all(tasks)
+                if self.experiment != "no_merge":  # experiment: skip the integrator (single write gateway)
+                    self.merge_all(tasks)
                 healthy, tests_ok, tail = self.deploy_and_test()
                 if not (healthy and tests_ok):
                     status, error = "error", f"deploy healthy={healthy}, tests ok={tests_ok}\n{tail}"
@@ -1011,6 +1101,23 @@ class Engine:
                     "model": self.provider.model, "plan_source": getattr(self, "plan_source", None)})
         rep["tasks"] = [{"id": x["id"], "agent": x["agent"], "reviews": x["reviews"], "fixes": x["fixes"],
                          "status": x["status"]} for x in tasks] or rep["tasks"]
+        calls, writers = {}, {}
+        for r in rows:
+            if r.get("event") != "tool":
+                continue
+            if r.get("tool") == "http_fetch":
+                calls.setdefault(r["agent"], []).append(r.get("url"))
+            if r.get("path") and r.get("ok") and r.get("tool") == "write_file":
+                writers.setdefault((r.get("workdir"), r["path"]), set()).add(r["agent"])
+        rep["network_calls"] = {a: len(u) for a, u in calls.items()}
+        rep["network_hosts_contacted"] = sorted({urllib.parse.urlparse(u or "").netloc for us in calls.values() for u in us})
+        rep["files_written_by_several_agents"] = {f"{w}/{p}": sorted(a) for (w, p), a in writers.items() if len(a) > 1}
+        merged = set(rep.get("artifacts") or [])
+        present = sorted(f.relative_to(self.workspace).as_posix() for f in self.workspace.rglob("*")
+                         if f.is_file() and "__pycache__" not in f.parts)
+        rep["workspace_files_without_merge_provenance"] = [f for f in present if f not in merged]
+        if self.experiment:
+            rep["experiment"] = self.experiment
         (self.run_dir / "run_report.json").write_text(json.dumps(rep, indent=2), encoding="utf-8")
 
 

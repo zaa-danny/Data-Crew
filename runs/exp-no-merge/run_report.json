@@ -1,0 +1,155 @@
+{
+  "run_id": "run-20261112-070744-960ff2",
+  "status": "ok",
+  "agents": [
+    {
+      "name": "coder-api",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 24
+    },
+    {
+      "name": "coder-data",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 26
+    },
+    {
+      "name": "coder-ui",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 15
+    },
+    {
+      "name": "collector",
+      "role": "collector",
+      "tasks": 1,
+      "tool_calls": 21
+    },
+    {
+      "name": "deployer",
+      "role": "deployer",
+      "tasks": 1,
+      "tool_calls": 1
+    },
+    {
+      "name": "orchestrator",
+      "role": "orchestrator",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "planner",
+      "role": "planner",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "reviewer",
+      "role": "reviewer",
+      "tasks": 0,
+      "tool_calls": 35
+    },
+    {
+      "name": "tester",
+      "role": "tester",
+      "tasks": 1,
+      "tool_calls": 12
+    }
+  ],
+  "tasks": [
+    {
+      "id": "collect",
+      "agent": "collector",
+      "reviews": 3,
+      "fixes": 2,
+      "status": "done"
+    },
+    {
+      "id": "analyze",
+      "agent": "coder-data",
+      "reviews": 2,
+      "fixes": 1,
+      "status": "done"
+    },
+    {
+      "id": "api",
+      "agent": "coder-api",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "ui",
+      "agent": "coder-ui",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "qa",
+      "agent": "tester",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "deploy",
+      "agent": "deployer",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    }
+  ],
+  "artifacts": [],
+  "deploy": {
+    "port": 65443,
+    "health": true
+  },
+  "tests": {
+    "passed": 12,
+    "failed": 0
+  },
+  "steps": 64,
+  "tokens": 335979,
+  "model": "deepseek-chat",
+  "plan_source": "fallback",
+  "network_calls": {
+    "collector": 3
+  },
+  "network_hosts_contacted": [
+    "127.0.0.1:8000"
+  ],
+  "files_written_by_several_agents": {
+    "workspace/data/_check.py": [
+      "coder-api",
+      "collector"
+    ]
+  },
+  "workspace_files_without_merge_provenance": [
+    "data/_check.py",
+    "data/_inspect.py",
+    "data/_mkdir.py",
+    "data/_verify.py",
+    "data/app.db",
+    "data/records.jsonl",
+    "data/summary.json",
+    "deploy/README.md",
+    "params.json",
+    "pipeline/__init__.py",
+    "pipeline/analyze.py",
+    "pipeline/collect.py",
+    "pipeline/store.py",
+    "server/__init__.py",
+    "server/app.py",
+    "site/_build_data.py",
+    "site/app.js",
+    "site/data.json",
+    "site/index.html",
+    "site/style.css",
+    "spec.json",
+    "tests/test_api.py",
+    "tests/test_pipeline.py"
+  ],
+  "experiment": "no_merge"
+}

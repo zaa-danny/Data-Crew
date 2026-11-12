@@ -1,0 +1,114 @@
+{
+  "run_id": "run-20261112-071145-af44ec",
+  "status": "unresolved",
+  "agents": [
+    {
+      "name": "coder-api",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 26
+    },
+    {
+      "name": "coder-data",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 16
+    },
+    {
+      "name": "coder-ui",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 19
+    },
+    {
+      "name": "collector",
+      "role": "collector",
+      "tasks": 1,
+      "tool_calls": 13
+    },
+    {
+      "name": "orchestrator",
+      "role": "orchestrator",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "planner",
+      "role": "planner",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "reviewer",
+      "role": "reviewer",
+      "tasks": 0,
+      "tool_calls": 41
+    },
+    {
+      "name": "tester",
+      "role": "tester",
+      "tasks": 1,
+      "tool_calls": 19
+    }
+  ],
+  "tasks": [
+    {
+      "id": "collect",
+      "agent": "collector",
+      "reviews": 2,
+      "fixes": 1,
+      "status": "done"
+    },
+    {
+      "id": "analyze",
+      "agent": "coder-data",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "api",
+      "agent": "coder-api",
+      "reviews": 3,
+      "fixes": 2,
+      "status": "done"
+    },
+    {
+      "id": "ui",
+      "agent": "coder-ui",
+      "reviews": 2,
+      "fixes": 1,
+      "status": "done"
+    },
+    {
+      "id": "qa",
+      "agent": "tester",
+      "reviews": 3,
+      "fixes": 2,
+      "status": "unresolved"
+    },
+    {
+      "id": "deploy",
+      "agent": "deployer",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    }
+  ],
+  "artifacts": [],
+  "deploy": null,
+  "tests": null,
+  "steps": 70,
+  "tokens": 477868,
+  "model": "deepseek-chat",
+  "plan_source": "fallback",
+  "network_calls": {
+    "collector": 3
+  },
+  "network_hosts_contacted": [
+    "127.0.0.1:8000"
+  ],
+  "files_written_by_several_agents": {},
+  "workspace_files_without_merge_provenance": [],
+  "experiment": "open_network"
+}

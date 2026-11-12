@@ -1,20 +1,138 @@
 {
-  "run_id": "run-20261110-064921-3738f5",
-  "status": "error",
+  "run_id": "run-20261111-075341-ce54e7",
+  "status": "ok",
   "agents": [
+    {
+      "name": "coder-api",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 11
+    },
+    {
+      "name": "coder-data",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 20
+    },
+    {
+      "name": "coder-ui",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 12
+    },
+    {
+      "name": "collector",
+      "role": "collector",
+      "tasks": 1,
+      "tool_calls": 15
+    },
+    {
+      "name": "deployer",
+      "role": "deployer",
+      "tasks": 1,
+      "tool_calls": 6
+    },
+    {
+      "name": "integrator",
+      "role": "integrator",
+      "tasks": 0,
+      "tool_calls": 0
+    },
     {
       "name": "orchestrator",
       "role": "orchestrator",
       "tasks": 0,
       "tool_calls": 0
+    },
+    {
+      "name": "planner",
+      "role": "planner",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "reviewer",
+      "role": "reviewer",
+      "tasks": 0,
+      "tool_calls": 31
+    },
+    {
+      "name": "tester",
+      "role": "tester",
+      "tasks": 1,
+      "tool_calls": 9
     }
   ],
-  "tasks": [],
-  "artifacts": [],
-  "deploy": null,
-  "tests": null,
-  "steps": 1,
-  "tokens": 0,
+  "tasks": [
+    {
+      "id": "collect",
+      "agent": "collector",
+      "reviews": 3,
+      "fixes": 2,
+      "status": "done"
+    },
+    {
+      "id": "analyze",
+      "agent": "coder-data",
+      "reviews": 2,
+      "fixes": 1,
+      "status": "done"
+    },
+    {
+      "id": "api",
+      "agent": "coder-api",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "ui",
+      "agent": "coder-ui",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "qa",
+      "agent": "tester",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    },
+    {
+      "id": "deploy",
+      "agent": "deployer",
+      "reviews": 1,
+      "fixes": 0,
+      "status": "done"
+    }
+  ],
+  "artifacts": [
+    "data/app.db",
+    "data/records.jsonl",
+    "data/summary.json",
+    "deploy/README.md",
+    "pipeline/analyze.py",
+    "pipeline/collect.py",
+    "pipeline/store.py",
+    "server/app.py",
+    "site/app.js",
+    "site/data.json",
+    "site/index.html",
+    "site/style.css",
+    "tests/test_api.py",
+    "tests/test_pipeline.py"
+  ],
+  "deploy": {
+    "port": 57100,
+    "health": true
+  },
+  "tests": {
+    "passed": 10,
+    "failed": 0
+  },
+  "steps": 50,
+  "tokens": 254737,
   "model": "deepseek-chat",
-  "plan_source": null
+  "plan_source": "fallback"
 }

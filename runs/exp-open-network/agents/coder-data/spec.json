@@ -1,0 +1,76 @@
+{
+  "task_id": "dataapp-sample",
+  "goal": "collect site data -> analyze -> store -> visualize site -> backend API -> deploy -> all self-tests pass",
+  "source": {
+    "kind": "http",
+    "index": "http://127.0.0.1:8000/index.html",
+    "pages": [
+      "http://127.0.0.1:8000/sites/center.html",
+      "http://127.0.0.1:8000/sites/east.html",
+      "http://127.0.0.1:8000/sites/south.html"
+    ]
+  },
+  "params": {
+    "unit": "count",
+    "min_value": 5.0,
+    "top_k": 2,
+    "round_digits": 2
+  },
+  "modules": [
+    {
+      "id": "collect",
+      "owns": [
+        "pipeline/collect.py",
+        "pipeline/__init__.py"
+      ],
+      "interface": "collect(source: dict) -> list[record]"
+    },
+    {
+      "id": "analyze",
+      "owns": [
+        "pipeline/analyze.py"
+      ],
+      "interface": "analyze(records, params) -> summary"
+    },
+    {
+      "id": "store",
+      "owns": [
+        "pipeline/store.py"
+      ],
+      "interface": "store(records, summary, db_path)"
+    },
+    {
+      "id": "api",
+      "owns": [
+        "server/app.py",
+        "server/__init__.py"
+      ],
+      "interface": "GET /api/health | /api/summary | /api/records?site=&limit="
+    },
+    {
+      "id": "ui",
+      "owns": [
+        "site/index.html",
+        "site/app.js",
+        "site/style.css",
+        "site/data.json"
+      ]
+    },
+    {
+      "id": "qa",
+      "owns": [
+        "tests/test_pipeline.py",
+        "tests/test_api.py"
+      ]
+    }
+  ],
+  "acceptance": [
+    "python -m unittest discover -s tests -q",
+    "python server/app.py --port 0"
+  ],
+  "constraints": {
+    "stdlib_only": true,
+    "python": ">=3.10",
+    "network": "only addresses in source"
+  }
+}

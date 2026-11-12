@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Site Data Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Site Data Dashboard</h1>
+    <p class="subtitle">Summary, per-site totals and top devices, loaded from data.json.</p>
+  </header>
+  <main>
+    <section id="summary" class="panel" aria-live="polite">
+      <p class="loading">Loading data&hellip;</p>
+    </section>
+    <section class="panel">
+      <h2>Totals by site</h2>
+      <div id="chart" class="chart"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

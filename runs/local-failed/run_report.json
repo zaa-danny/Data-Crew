@@ -1,0 +1,75 @@
+{
+  "run_id": "run-20261111-062954-fffb3c",
+  "status": "error",
+  "agents": [
+    {
+      "name": "collector",
+      "role": "collector",
+      "tasks": 1,
+      "tool_calls": 69
+    },
+    {
+      "name": "orchestrator",
+      "role": "orchestrator",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "planner",
+      "role": "planner",
+      "tasks": 0,
+      "tool_calls": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "collect",
+      "agent": "collector",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "failed"
+    },
+    {
+      "id": "analyze",
+      "agent": "coder-data",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "api",
+      "agent": "coder-api",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "ui",
+      "agent": "coder-ui",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "qa",
+      "agent": "tester",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "deploy",
+      "agent": "deployer",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    }
+  ],
+  "artifacts": [],
+  "deploy": null,
+  "tests": null,
+  "steps": 15,
+  "tokens": 104219,
+  "model": "qwen2.5-coder-8k",
+  "plan_source": "fallback"
+}

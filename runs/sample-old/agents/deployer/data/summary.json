@@ -1,0 +1,61 @@
+{
+  "unit": "count",
+  "record_count": 44,
+  "kept_count": 41,
+  "site_count": 3,
+  "device_count": 10,
+  "min_value": 5.0,
+  "round_digits": 2,
+  "top_k": 2,
+  "total": 2005.8,
+  "mean": 48.92,
+  "max": {
+    "site": "center",
+    "device": "center-d02",
+    "day": "2026-03-04",
+    "value": 99.5
+  },
+  "min": {
+    "site": "east",
+    "device": "east-d01",
+    "day": "2026-03-02",
+    "value": 5.5
+  },
+  "by_site": [
+    {
+      "site": "center",
+      "total": 1100.9,
+      "mean": 57.94,
+      "device_count": 4,
+      "kept_count": 19
+    },
+    {
+      "site": "south",
+      "total": 547.5,
+      "mean": 45.62,
+      "device_count": 3,
+      "kept_count": 12
+    },
+    {
+      "site": "east",
+      "total": 357.4,
+      "mean": 35.74,
+      "device_count": 3,
+      "kept_count": 10
+    }
+  ],
+  "top_devices": [
+    {
+      "site": "center",
+      "device": "center-d04",
+      "total": 369.4,
+      "mean": 73.88
+    },
+    {
+      "site": "center",
+      "device": "center-d02",
+      "total": 282.4,
+      "mean": 56.48
+    }
+  ]
+}
