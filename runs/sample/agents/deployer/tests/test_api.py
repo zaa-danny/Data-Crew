@@ -1,4 +1,5 @@
-"""Tests for server/app.py data helpers (stdlib unittest, offline)."""
+"""Tests for server.app data helpers (stdlib unittest, offline)."""
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server.app import load_records, load_summary  # noqa: E402
 
 
-def _rec(site, device, day, value):
+def rec(site, device, day, value):
     return {"site": site, "device": device, "day": day, "value": value}
 
 
@@ -23,26 +24,25 @@ class ApiDataFunctionTests(unittest.TestCase):
         data = self.root / "data"
         data.mkdir(parents=True)
 
+        self.records = [
+            rec("a", "d2", "2024-01-02", 7.0),
+            rec("a", "d1", "2024-01-03", 6.0),
+            rec("b", "d1", "2024-01-01", 9.0),
+            rec("a", "d1", "2024-01-01", 5.0),
+        ]
+        with (data / "records.jsonl").open("w", encoding="utf-8") as fh:
+            for r in self.records:
+                fh.write(json.dumps(r) + "\n")
+
         self.summary = {
             "unit": "count",
             "record_count": 4,
-            "kept_count": 2,
-            "total": 15.0,
-            "mean": 7.5,
+            "kept_count": 4,
+            "total": 27.0,
+            "mean": 6.75,
         }
-        (data / "summary.json").write_text(
-            json.dumps(self.summary), encoding="utf-8"
-        )
-
-        self.records = [
-            _rec("a", "d2", "2024-01-02", 6.0),
-            _rec("a", "d1", "2024-01-03", 5.0),
-            _rec("b", "d1", "2024-01-01", 10.0),
-            _rec("a", "d1", "2024-01-01", 4.0),
-        ]
-        with (data / "records.jsonl").open("w", encoding="utf-8") as fh:
-            for rec in self.records:
-                fh.write(json.dumps(rec) + "\n")
+        with (data / "summary.json").open("w", encoding="utf-8") as fh:
+            json.dump(self.summary, fh)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -51,33 +51,30 @@ class ApiDataFunctionTests(unittest.TestCase):
         self.assertEqual(load_summary(self.root), self.summary)
 
     def test_load_records_sorted_by_device_then_day(self):
-        records = load_records(self.root)
-        self.assertEqual(len(records), 4)
-        keys = [(r["device"], r["day"]) for r in records]
+        got = load_records(self.root)
+        self.assertEqual(len(got), 4)
+        keys = [(r["device"], r["day"]) for r in got]
         self.assertEqual(keys, sorted(keys))
+        self.assertEqual(keys[0], ("d1", "2024-01-01"))
 
     def test_load_records_site_filter(self):
-        records = load_records(self.root, site="a")
-        self.assertEqual(len(records), 3)
-        self.assertTrue(all(r["site"] == "a" for r in records))
-        keys = [(r["device"], r["day"]) for r in records]
+        got = load_records(self.root, site="a")
+        self.assertEqual(len(got), 3)
+        self.assertTrue(all(r["site"] == "a" for r in got))
+        keys = [(r["device"], r["day"]) for r in got]
         self.assertEqual(keys, sorted(keys))
 
     def test_load_records_limit(self):
-        records = load_records(self.root, limit=2)
-        self.assertEqual(len(records), 2)
-        # limit applies after sorting by (device, day): both d1/2024-01-01 first
-        self.assertEqual(
-            [(r["device"], r["day"]) for r in records],
-            [("d1", "2024-01-01"), ("d1", "2024-01-01")],
-        )
+        got = load_records(self.root, limit=2)
+        self.assertEqual(len(got), 2)
+        full = load_records(self.root)
+        self.assertEqual(got, full[:2])
 
     def test_load_records_site_and_limit(self):
-        records = load_records(self.root, site="a", limit=1)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["site"], "a")
-        self.assertEqual(records[0]["device"], "d1")
-        self.assertEqual(records[0]["day"], "2024-01-01")
+        got = load_records(self.root, site="a", limit=1)
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["site"], "a")
+        self.assertEqual((got[0]["device"], got[0]["day"]), ("d1", "2024-01-01"))
 
 
 if __name__ == "__main__":

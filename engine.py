@@ -82,7 +82,7 @@ class Provider:
         last = None
         local = (urllib.parse.urlparse(self.base).hostname or "") in ("127.0.0.1", "localhost")
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if local else urllib.request.build_opener()
-        for attempt in range(3):
+        for attempt in range(6):  # transient SSL/connection resets happen; be patient before giving up
             try:
                 with opener.open(req, timeout=180) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -98,7 +98,7 @@ class Provider:
                     raise ProviderError(last)
             except (urllib.error.URLError, TimeoutError, OSError, KeyError, ValueError) as exc:
                 last = f"{type(exc).__name__}: {exc}"
-            time.sleep(2 * (attempt + 1))
+            time.sleep(min(2 * (attempt + 1), 10))
         raise ProviderError(f"provider failed after retries: {last}")
 
 
@@ -378,6 +378,8 @@ Never paste raw HTML or whole files into the conclusion. Helper scripts must liv
 (data/, pipeline/, tests/, site/, server/, deploy/) and be named with a leading underscore, for example data/_check.py;
 they are never delivered. A write outside those folders (for example a top-level _check.py) is denied - do not retry it.
 Prefer helper scripts over python -c with complex quoting. If a command fails, read its error output and fix the cause.
+Commands run in the host shell, which may be Windows cmd: do NOT use ls, head, tail, cat, wc, rm or shell pipes for file
+inspection; use read_file, glob, or a small python helper script instead.
 """
 
 
@@ -627,7 +629,7 @@ CHECKLISTS = {
     "qa": ["at least 5 unittest cases; deterministic and offline; sys.path set from __file__",
            "covers threshold filtering, by_site ordering, top_devices truncation, SQLite round-trip, API data functions",
            "assertions are meaningful (check values/order, not just that code runs); the run output shows all green",
-           "tests use tempfile/TemporaryDirectory and leave no files behind; each test has a descriptive name and a docstring",
+           "tests that create files use tempfile/TemporaryDirectory so they leave nothing behind in the project",
            "the threshold test includes a record exactly equal to min_value and the tie-order tests include equal totals"],
     "deploy": ["deploy/README.md has the start command with server/app.py, the /api/health check and the test command"],
 }
@@ -642,7 +644,9 @@ def review_prompt(task, bundle, history_tail):
             '{"verdict": "approved" | "changes_requested", "defects": [{"file": "<path>", "why": "<concrete problem>"}]}\n'
             "Use approved only when defects is empty. Be strict and concrete. A defect must be demonstrable from the files or the "
             "recorded tool outputs; speculation about unlikely inputs or extra defensive features beyond the checklist is NOT a defect. "
-            "Files that belong to other agents' tasks and are absent here are not defects.\n\n"
+            "Files that belong to other agents' tasks and are absent here are not defects. Files whose name starts with an "
+            "underscore (for example data/_check.py or tests/_probe.py) are scratch helpers that are never delivered and never run "
+            "by the test suite: do NOT report them as defects.\n\n"
             f"=== FILES ===\n{bundle}\n\n=== LAST TOOL OUTPUTS OF THE AGENT ===\n{history_tail}\n")
 
 

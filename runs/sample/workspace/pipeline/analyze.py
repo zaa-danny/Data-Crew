@@ -1,31 +1,31 @@
-"""Analyzer: turn raw records into the summary document.
+"""Analyze: turn raw records into a summary dict.
 
 Contract
 --------
-``analyze(records, params) -> summary`` where ``params`` provides ``unit``,
+``analyze(records, params) -> dict`` where ``params`` has ``unit``,
 ``min_value``, ``top_k`` and ``round_digits`` (read at run time, never
 hardcoded).
 
-Semantics
----------
-* kept = records with ``value >= min_value``; only kept records enter the
-  statistics.
-* ``record_count`` counts ALL records, ``kept_count`` counts kept ones.
-* ``site_count`` = distinct sites among kept; ``device_count`` = distinct
-  ``(site, device)`` pairs among kept.
-* ``total`` = ``round(sum(raw kept values), round_digits)`` -- raw values are
-  summed first and rounded exactly once at the end.
-* ``mean`` = ``round(total / kept_count, round_digits)`` using the ROUNDED
-  total; ``0.0`` when nothing is kept.
-* ``by_site``: one entry per site with at least one kept record,
-  ``{site, total, mean, device_count, kept_count}``; sorted by ``total``
-  descending, ties by ``site`` ascending.
-* ``top_devices``: per ``(site, device)`` with at least one kept record,
-  ``{site, device, total, mean}``; sorted by ``total`` descending, ties by
-  ``site`` ascending then ``device`` ascending; truncated to ``top_k``.
-* ``max`` / ``min``: the kept record ``{site, device, day, value}`` with the
-  largest / smallest value; ties resolved by the lexicographically smallest
-  ``(site, device, day)``.
+Methodology (exact):
+  - kept = records with ``value >= min_value``; only kept records enter
+    statistics.
+  - record_count = len(records) (ALL records, before filtering);
+    kept_count = len(kept).
+  - site_count = distinct sites among kept;
+    device_count = distinct (site, device) pairs among kept.
+  - total = round(sum of RAW kept values, round_digits) - sum first, round once.
+  - mean = round(total / kept_count, round_digits) using the ROUNDED total;
+    0.0 when nothing is kept.
+  - by_site: [{site, total, mean, device_count, kept_count}] with
+    total = round(sum raw kept for site), mean = round(site_total / site_kept),
+    sorted by total DESCENDING, ties by site ASCENDING; sites with no kept
+    record are omitted.
+  - top_devices: per (site, device) {site, device, total, mean} with
+    total = round(sum raw kept), mean = round(sum raw / count), sorted by
+    total DESCENDING, ties by site ASC, then device ASC; first top_k kept.
+  - max / min: the kept record {site, device, day, value} with the largest /
+    smallest value; ties resolved by the lexicographically smallest
+    (site, device, day). ``None`` when nothing is kept.
 
 CLI: ``python pipeline/analyze.py --records data/records.jsonl
 --params params.json --out data/summary.json``
@@ -35,28 +35,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-
-_RECORD_FIELDS = ("site", "device", "day", "value")
-
-
-def _round(value: float, digits: int) -> float:
-    return round(value, digits)
+from collections import defaultdict
 
 
-def _pick_extreme(kept: list[dict], largest: bool) -> dict | None:
-    if not kept:
-        return None
-    best = None
-    best_key = None
-    for rec in kept:
-        value = rec["value"]
-        # primary: value (descending for max, ascending for min)
-        # secondary: lexicographically smallest (site, device, day)
-        key = ((-value) if largest else value, rec["site"], rec["device"], rec["day"])
-        if best_key is None or key < best_key:
-            best_key = key
-            best = rec
-    return {field: best[field] for field in _RECORD_FIELDS}
+def _round(x: float, digits: int) -> float:
+    return round(x, digits)
+
+
+def _record_key(rec: dict) -> tuple[str, str, str]:
+    return (rec["site"], rec["device"], rec["day"])
 
 
 def analyze(records: list[dict], params: dict) -> dict:
@@ -65,69 +52,107 @@ def analyze(records: list[dict], params: dict) -> dict:
     top_k = params["top_k"]
     round_digits = params["round_digits"]
 
-    kept = [rec for rec in records if rec["value"] >= min_value]
+    kept = [r for r in records if r["value"] >= min_value]
+
+    record_count = len(records)
     kept_count = len(kept)
 
-    total = _round(sum(rec["value"] for rec in kept), round_digits)
+    sites = {r["site"] for r in kept}
+    devices = {(r["site"], r["device"]) for r in kept}
+
+    raw_total = 0.0
+    for r in kept:
+        raw_total += r["value"]
+    total = _round(raw_total, round_digits)
     mean = _round(total / kept_count, round_digits) if kept_count else 0.0
 
-    site_raw: dict[str, list[float]] = {}
-    device_raw: dict[tuple[str, str], list[float]] = {}
-    for rec in kept:
-        site_raw.setdefault(rec["site"], []).append(rec["value"])
-        device_raw.setdefault((rec["site"], rec["device"]), []).append(rec["value"])
+    # per-site aggregation over raw values
+    site_raw: dict[str, float] = defaultdict(float)
+    site_kept: dict[str, int] = defaultdict(int)
+    site_devices: dict[str, set] = defaultdict(set)
+    for r in kept:
+        site_raw[r["site"]] += r["value"]
+        site_kept[r["site"]] += 1
+        site_devices[r["site"]].add(r["device"])
 
     by_site = []
-    for site, values in site_raw.items():
-        site_total = _round(sum(values), round_digits)
-        site_count = len(values)
+    for site in site_raw:
+        s_total = _round(site_raw[site], round_digits)
+        s_count = site_kept[site]
         by_site.append({
             "site": site,
-            "total": site_total,
-            "mean": _round(site_total / site_count, round_digits),
-            "device_count": len({dev for (s, dev) in device_raw if s == site}),
-            "kept_count": site_count,
+            "total": s_total,
+            "mean": _round(s_total / s_count, round_digits) if s_count else 0.0,
+            "device_count": len(site_devices[site]),
+            "kept_count": s_count,
         })
-    by_site.sort(key=lambda row: (-row["total"], row["site"]))
+    by_site.sort(key=lambda d: (-d["total"], d["site"]))
 
-    devices = []
-    for (site, device), values in device_raw.items():
-        dev_total = _round(sum(values), round_digits)
-        devices.append({
+    # per (site, device) aggregation over raw values
+    dev_raw: dict[tuple[str, str], float] = defaultdict(float)
+    dev_count: dict[tuple[str, str], int] = defaultdict(int)
+    for r in kept:
+        key = (r["site"], r["device"])
+        dev_raw[key] += r["value"]
+        dev_count[key] += 1
+
+    dev_rows = []
+    for (site, device), raw in dev_raw.items():
+        d_total = _round(raw, round_digits)
+        cnt = dev_count[(site, device)]
+        dev_rows.append({
             "site": site,
             "device": device,
-            "total": dev_total,
-            "mean": _round(dev_total / len(values), round_digits),
+            "total": d_total,
+            "mean": _round(d_total / cnt, round_digits) if cnt else 0.0,
         })
-    devices.sort(key=lambda row: (-row["total"], row["site"], row["device"]))
-    top_devices = devices[:top_k]
+    dev_rows.sort(key=lambda d: (-d["total"], d["site"], d["device"]))
+    top_devices = dev_rows[:top_k]
+
+    max_rec = None
+    min_rec = None
+    if kept:
+        max_rec = min(kept, key=lambda r: (-r["value"],) + _record_key(r))
+        min_rec = min(kept, key=lambda r: (r["value"],) + _record_key(r))
+        max_rec = {
+            "site": max_rec["site"],
+            "device": max_rec["device"],
+            "day": max_rec["day"],
+            "value": max_rec["value"],
+        }
+        min_rec = {
+            "site": min_rec["site"],
+            "device": min_rec["device"],
+            "day": min_rec["day"],
+            "value": min_rec["value"],
+        }
 
     return {
         "unit": unit,
-        "record_count": len(records),
+        "record_count": record_count,
         "kept_count": kept_count,
-        "site_count": len(site_raw),
-        "device_count": len(device_raw),
+        "site_count": len(sites),
+        "device_count": len(devices),
         "min_value": min_value,
         "round_digits": round_digits,
         "top_k": top_k,
         "total": total,
         "mean": mean,
-        "max": _pick_extreme(kept, largest=True),
-        "min": _pick_extreme(kept, largest=False),
+        "max": max_rec,
+        "min": min_rec,
         "by_site": by_site,
         "top_devices": top_devices,
     }
 
 
 def load_records(path: str) -> list[dict]:
-    records = []
+    out = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
-                records.append(json.loads(line))
-    return records
+                out.append(json.loads(line))
+    return out
 
 
 def main() -> None:
@@ -146,8 +171,12 @@ def main() -> None:
     if parent:
         os.makedirs(parent, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, sort_keys=False)
+        json.dump(summary, f, ensure_ascii=False, indent=2)
         f.write("\n")
+    print(
+        f"analyzed {summary['record_count']} records "
+        f"({summary['kept_count']} kept) -> {args.out}"
+    )
 
 
 if __name__ == "__main__":

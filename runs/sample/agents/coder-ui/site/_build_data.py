@@ -1,23 +1,25 @@
-"""Generate site/data.json from data/summary.json and data/records.jsonl."""
 import json
-import pathlib
+import os
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-SUMMARY = ROOT / "data" / "summary.json"
-RECORDS = ROOT / "data" / "records.jsonl"
-OUT = ROOT / "site" / "data.json"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 
 
-def main() -> None:
-    summary = json.loads(SUMMARY.read_text(encoding="utf-8"))
+def main():
+    with open(os.path.join(ROOT, "data", "summary.json"), "r", encoding="utf-8") as f:
+        summary = json.load(f)
     records = []
-    for line in RECORDS.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            records.append(json.loads(line))
+    with open(os.path.join(ROOT, "data", "records.jsonl"), "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
     payload = {"summary": summary, "records": records}
-    OUT.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {OUT} ({len(records)} records)")
+    out = os.path.join(HERE, "data.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("wrote", out, "records:", len(records))
 
 
 if __name__ == "__main__":

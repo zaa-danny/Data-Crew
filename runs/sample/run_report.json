@@ -1,36 +1,36 @@
 {
-  "run_id": "run-20261111-075341-ce54e7",
+  "run_id": "run-20261112-094323-102766",
   "status": "ok",
   "agents": [
     {
       "name": "coder-api",
       "role": "coder",
       "tasks": 1,
-      "tool_calls": 11
+      "tool_calls": 9
     },
     {
       "name": "coder-data",
       "role": "coder",
       "tasks": 1,
-      "tool_calls": 20
+      "tool_calls": 18
     },
     {
       "name": "coder-ui",
       "role": "coder",
       "tasks": 1,
-      "tool_calls": 12
+      "tool_calls": 21
     },
     {
       "name": "collector",
       "role": "collector",
       "tasks": 1,
-      "tool_calls": 15
+      "tool_calls": 21
     },
     {
       "name": "deployer",
       "role": "deployer",
       "tasks": 1,
-      "tool_calls": 6
+      "tool_calls": 4
     },
     {
       "name": "integrator",
@@ -54,13 +54,13 @@
       "name": "reviewer",
       "role": "reviewer",
       "tasks": 0,
-      "tool_calls": 31
+      "tool_calls": 36
     },
     {
       "name": "tester",
       "role": "tester",
       "tasks": 1,
-      "tool_calls": 9
+      "tool_calls": 7
     }
   ],
   "tasks": [
@@ -88,8 +88,8 @@
     {
       "id": "ui",
       "agent": "coder-ui",
-      "reviews": 1,
-      "fixes": 0,
+      "reviews": 2,
+      "fixes": 1,
       "status": "done"
     },
     {
@@ -112,9 +112,11 @@
     "data/records.jsonl",
     "data/summary.json",
     "deploy/README.md",
+    "pipeline/__init__.py",
     "pipeline/analyze.py",
     "pipeline/collect.py",
     "pipeline/store.py",
+    "server/__init__.py",
     "server/app.py",
     "site/app.js",
     "site/data.json",
@@ -124,15 +126,23 @@
     "tests/test_pipeline.py"
   ],
   "deploy": {
-    "port": 57100,
+    "port": 65178,
     "health": true
   },
   "tests": {
-    "passed": 10,
+    "passed": 11,
     "failed": 0
   },
-  "steps": 50,
-  "tokens": 254737,
+  "steps": 60,
+  "tokens": 477561,
   "model": "deepseek-chat",
-  "plan_source": "fallback"
+  "plan_source": "fallback",
+  "network_calls": {
+    "collector": 3
+  },
+  "network_hosts_contacted": [
+    "127.0.0.1:8000"
+  ],
+  "files_written_by_several_agents": {},
+  "workspace_files_without_merge_provenance": []
 }

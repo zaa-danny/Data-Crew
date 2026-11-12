@@ -20,62 +20,95 @@ class ApiDataFunctionTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
-        data = self.root / "data"
-        data.mkdir(parents=True)
+        data_dir = self.root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
         self.summary = {
             "unit": "count",
-            "record_count": 4,
-            "kept_count": 2,
-            "total": 15.0,
-            "mean": 7.5,
+            "record_count": 5,
+            "kept_count": 3,
+            "site_count": 2,
+            "device_count": 3,
+            "min_value": 5.0,
+            "round_digits": 2,
+            "top_k": 2,
+            "total": 21.0,
+            "mean": 7.0,
+            "max": rec("beta", "d1", "2024-01-02", 9.0),
+            "min": rec("alpha", "d1", "2024-01-01", 5.0),
+            "by_site": [],
+            "top_devices": [],
         }
-        (data / "summary.json").write_text(
+        (data_dir / "summary.json").write_text(
             json.dumps(self.summary), encoding="utf-8"
         )
-        # Every (device, day) pair is unique so the (device, day) sort is
-        # fully deterministic with no tie-breaking needed.
+
         self.records = [
-            rec("a", "d2", "2024-01-02", 5.0),
-            rec("a", "d1", "2024-01-01", 10.0),
-            rec("b", "d3", "2024-01-01", 1.0),
-            rec("a", "d1", "2024-01-03", 2.0),
+            rec("alpha", "d2", "2024-01-02", 6.0),
+            rec("alpha", "d1", "2024-01-03", 5.0),
+            rec("beta", "d1", "2024-01-02", 9.0),
+            rec("alpha", "d1", "2024-01-01", 7.0),
+            rec("beta", "d2", "2024-01-01", 1.0),
         ]
-        with (data / "records.jsonl").open("w", encoding="utf-8") as fh:
+        with open(data_dir / "records.jsonl", "w", encoding="utf-8") as f:
             for r in self.records:
-                fh.write(json.dumps(r) + "\n")
+                f.write(json.dumps(r) + "\n")
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_load_summary(self):
-        self.assertEqual(load_summary(self.root), self.summary)
+    def test_load_summary_round_trip(self):
+        loaded = load_summary(self.root)
+        self.assertEqual(loaded, self.summary)
+        self.assertEqual(loaded["record_count"], 5)
+        self.assertAlmostEqual(loaded["total"], 21.0, places=6)
 
-    def test_load_records_site_filter_and_order(self):
-        rows = load_records(self.root, site="a")
-        self.assertEqual(len(rows), 3)
-        self.assertTrue(all(r["site"] == "a" for r in rows))
-        keys = [(r["device"], r["day"]) for r in rows]
-        self.assertEqual(keys, sorted(keys))  # ascending by (device, day)
-
-    def test_load_records_limit(self):
-        # Unique (device, day) keys -> deterministic sort order:
-        #   d1/2024-01-01, d1/2024-01-03, d2/2024-01-02, d3/2024-01-01
-        rows = load_records(self.root, limit=2)
-        self.assertEqual(len(rows), 2)
+    def test_load_records_sorted_by_device_then_day(self):
+        loaded = load_records(self.root)
+        self.assertEqual(len(loaded), len(self.records))
+        keys = [(r["device"], r["day"]) for r in loaded]
+        self.assertEqual(keys, sorted(keys))
         self.assertEqual(
-            [(r["device"], r["day"]) for r in rows],
-            [("d1", "2024-01-01"), ("d1", "2024-01-03")],
+            keys,
+            [
+                ("d1", "2024-01-01"),
+                ("d1", "2024-01-02"),
+                ("d1", "2024-01-03"),
+                ("d2", "2024-01-01"),
+                ("d2", "2024-01-02"),
+            ],
         )
-        rows3 = load_records(self.root, limit=3)
-        self.assertEqual(len(rows3), 3)
+
+    def test_load_records_site_filter(self):
+        loaded = load_records(self.root, site="alpha")
+        self.assertEqual(len(loaded), 3)
+        self.assertTrue(all(r["site"] == "alpha" for r in loaded))
         self.assertEqual(
-            [(r["device"], r["day"]) for r in rows3],
+            [(r["device"], r["day"]) for r in loaded],
             [("d1", "2024-01-01"), ("d1", "2024-01-03"), ("d2", "2024-01-02")],
         )
 
-    def test_load_records_no_filter_returns_all(self):
-        rows = load_records(self.root)
-        self.assertEqual(len(rows), len(self.records))
+        missing = load_records(self.root, site="nope")
+        self.assertEqual(missing, [])
+
+    def test_load_records_limit(self):
+        loaded = load_records(self.root, limit=2)
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(
+            [(r["device"], r["day"]) for r in loaded],
+            [("d1", "2024-01-01"), ("d1", "2024-01-02")],
+        )
+
+        # limit applies after the site filter
+        filtered = load_records(self.root, site="alpha", limit=1)
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["site"], "alpha")
+        self.assertEqual(filtered[0]["device"], "d1")
+
+        # limit 0 yields nothing; invalid limits are ignored
+        self.assertEqual(load_records(self.root, limit=0), [])
+        self.assertEqual(len(load_records(self.root, limit="abc")), len(self.records))
+        self.assertEqual(len(load_records(self.root, limit=-1)), len(self.records))
 
 
 if __name__ == "__main__":

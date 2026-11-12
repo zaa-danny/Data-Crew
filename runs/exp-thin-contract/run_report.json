@@ -1,0 +1,96 @@
+{
+  "run_id": "run-20261112-095441-4be54b",
+  "status": "unresolved",
+  "agents": [
+    {
+      "name": "coder-data",
+      "role": "coder",
+      "tasks": 1,
+      "tool_calls": 31
+    },
+    {
+      "name": "collector",
+      "role": "collector",
+      "tasks": 1,
+      "tool_calls": 13
+    },
+    {
+      "name": "orchestrator",
+      "role": "orchestrator",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "planner",
+      "role": "planner",
+      "tasks": 0,
+      "tool_calls": 0
+    },
+    {
+      "name": "reviewer",
+      "role": "reviewer",
+      "tasks": 0,
+      "tool_calls": 23
+    }
+  ],
+  "tasks": [
+    {
+      "id": "collect",
+      "agent": "collector",
+      "reviews": 2,
+      "fixes": 1,
+      "status": "done"
+    },
+    {
+      "id": "analyze",
+      "agent": "coder-data",
+      "reviews": 3,
+      "fixes": 2,
+      "status": "unresolved"
+    },
+    {
+      "id": "api",
+      "agent": "coder-api",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "ui",
+      "agent": "coder-ui",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "qa",
+      "agent": "tester",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    },
+    {
+      "id": "deploy",
+      "agent": "deployer",
+      "reviews": 0,
+      "fixes": 0,
+      "status": "skipped"
+    }
+  ],
+  "artifacts": [],
+  "deploy": null,
+  "tests": null,
+  "steps": 26,
+  "tokens": 220680,
+  "model": "deepseek-chat",
+  "plan_source": "fallback",
+  "network_calls": {
+    "collector": 3
+  },
+  "network_hosts_contacted": [
+    "127.0.0.1:8000"
+  ],
+  "files_written_by_several_agents": {},
+  "workspace_files_without_merge_provenance": [],
+  "experiment": "thin_contract"
+}
