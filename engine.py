@@ -84,7 +84,7 @@ class Provider:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if local else urllib.request.build_opener()
         for attempt in range(6):  # transient SSL/connection resets happen; be patient before giving up
             try:
-                with opener.open(req, timeout=180) as resp:
+                with opener.open(req, timeout=120) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 text = data["choices"][0]["message"].get("content") or ""
                 tokens = int((data.get("usage") or {}).get("total_tokens") or 0)
@@ -165,6 +165,36 @@ def parse_readings(text):
 
 
 # ------------------------------------------------------------------ tools
+def run_tree(cmd, cwd, timeout, env, shell=False):
+    """Run a command and, on timeout, kill the WHOLE process tree. subprocess.run(..., timeout=) only kills the direct
+    child; on Windows a grandchild (for example a server started by the command) keeps the output pipes open and the
+    call then blocks forever. Returns (returncode, stdout, stderr, timed_out)."""
+    kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    p = subprocess.Popen(cmd, shell=shell, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", **kw)
+    try:
+        out, err = p.communicate(timeout=timeout)
+        return p.returncode, out or "", err or "", False
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True, timeout=20)
+            else:
+                import signal
+                os.killpg(p.pid, signal.SIGKILL)
+        except Exception:
+            pass
+        try:
+            p.kill()
+        except Exception:
+            pass
+        try:
+            out, err = p.communicate(timeout=5)
+        except Exception:
+            out, err = "", ""
+        return 124, out or "", err or "", True
+
+
 def snapshot(root: Path):
     snap = {}
     for p in root.rglob("*"):
@@ -345,12 +375,10 @@ class AgentTools:
             return False, "command was not approved by the user"
         before = snapshot(self.root)
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8")
-        try:
-            r = subprocess.run(cmd, shell=True, cwd=str(self.root), capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=90, env=env)
-            code, out = r.returncode, (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr.strip() else "")
-        except subprocess.TimeoutExpired:
-            code, out = 124, "TIMEOUT after 90s"
+        code, so, se, timed_out = run_tree(cmd, str(self.root), 90, env, shell=True)
+        out = so + (("\n[stderr]\n" + se) if se.strip() else "")
+        if timed_out:
+            code, out = 124, "TIMEOUT after 90s (the command and everything it started were killed; do not start servers or long-running programs from run_bash)\n" + out
         extra = {} if code == 0 else {"output_tail": out.strip()[-500:]}
         t.emit(self.agent, role, "tool", tool="run_bash", command=cmd, workdir=self.rel, ok=(code == 0), exit_code=code, **extra)
         after = snapshot(self.root)
@@ -646,7 +674,8 @@ def review_prompt(task, bundle, history_tail):
             "recorded tool outputs; speculation about unlikely inputs or extra defensive features beyond the checklist is NOT a defect. "
             "Files that belong to other agents' tasks and are absent here are not defects. Files whose name starts with an "
             "underscore (for example data/_check.py or tests/_probe.py) are scratch helpers that are never delivered and never run "
-            "by the test suite: do NOT report them as defects.\n\n"
+            "by the test suite: do NOT report them as defects. If a file ends with a '[truncated N chars]' marker, the cut is only in what "
+            "you were shown: judge the visible part and never report the truncation itself as a defect.\n\n"
             f"=== FILES ===\n{bundle}\n\n=== LAST TOOL OUTPUTS OF THE AGENT ===\n{history_tail}\n")
 
 
@@ -864,7 +893,7 @@ class Engine:
                 if f.endswith(".jsonl"):
                     ls = text.splitlines()
                     text = f"({len(ls)} lines) first 5:\n" + "\n".join(ls[:5])
-                parts.append(f"--- {f}\n{clip(text, 7000)}")
+                parts.append(f"--- {f}\n{clip(text, 30000)}")
             t.emit("reviewer", "reviewer", "tool", tool="read_file", workdir=wd_rel, ok=True, path=f)
         tail = "\n".join(self.last_outputs.get(task["agent"], [])[-8:]) or "(none)"
         msgs = [{"role": "system", "content": "AGENT: reviewer\n" + self.roles["reviewer"]["systemPrompt"] +
@@ -997,13 +1026,12 @@ class Engine:
                 except Exception:
                     proc.kill()
         t.emit("deployer", "deployer", "deploy", command=f"python server/app.py --port {port or 0}", port=port or 0, health=healthy)
-        r = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=str(ws), env=env,
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
-        text = (r.stderr or "") + (r.stdout or "")
+        rc, so, se, timed_out = run_tree([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], str(ws), 300, env)
+        text = se + so
         m = re.search(r"Ran (\d+) tests?", text)
         total = int(m.group(1)) if m else 0
         bad = sum(int(x) for x in re.findall(r"(?:failures|errors)=(\d+)", text))
-        ok = r.returncode == 0 and total >= 1
+        ok = rc == 0 and total >= 1 and not timed_out
         t.emit("tester", "tester", "test", suite="unittest", passed=max(total - bad, 0), failed=bad if total else 1, ok=ok)
         return healthy, ok, clip(text, 600)
 
